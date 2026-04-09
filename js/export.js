@@ -1,5 +1,6 @@
 /**
- * export.js — Export jokes to Word (.doc) and backup/restore as JSON
+ * export.js — Export jokes to proper .docx and backup/restore as JSON
+ * Uses JSZip (loaded globally via script tag) to build real .docx files
  */
 
 import DB from './db.js';
@@ -16,12 +17,40 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function escHtml(str) {
-  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function escXml(str) {
+  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Build a paragraph in OpenXML */
+function wxPara(text, opts = {}) {
+  const { bold, size, color, spacing } = opts;
+  let rPr = '';
+  if (bold) rPr += '<w:b/>';
+  if (size) rPr += `<w:sz w:val="${size}"/><w:szCs w:val="${size}"/>`;
+  if (color) rPr += `<w:color w:val="${color}"/>`;
+  const rPrTag = rPr ? `<w:rPr>${rPr}</w:rPr>` : '';
+
+  let pPr = '';
+  if (spacing) pPr = `<w:pPr><w:spacing w:after="${spacing}"/></w:pPr>`;
+
+  // Handle multi-line text
+  const lines = text.split('\n');
+  const runs = lines.map((line, i) => {
+    let r = `<w:r>${rPrTag}<w:t xml:space="preserve">${escXml(line)}</w:t></w:r>`;
+    if (i < lines.length - 1) r += '<w:r><w:br/></w:r>';
+    return r;
+  }).join('');
+
+  return `<w:p>${pPr}${runs}</w:p>`;
+}
+
+/** Build a horizontal rule */
+function wxHr() {
+  return `<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="E8E0D8"/></w:pBdr></w:pPr></w:p>`;
 }
 
 const Export = {
-  /** Export all jokes (or a subset) to a Word-compatible .doc file */
+  /** Export jokes to a proper .docx file */
   async exportToWord(jokes, title = 'My Jokes') {
     if (!jokes) jokes = await DB.getAll('jokes');
     if (jokes.length === 0) { UI.toast('No jokes to export'); return; }
@@ -36,51 +65,82 @@ const Export = {
     }
 
     const ratingLabels = ['', 'Bombed', 'Meh', 'OK', 'Good', 'Killed'];
+    const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 
-    let jokesHtml = '';
+    // Build document body XML
+    let bodyXml = '';
+    bodyXml += wxPara(title, { bold: true, size: 40, color: '6C5CE7', spacing: 60 });
+    bodyXml += wxPara(`${jokes.length} jokes \u2022 Exported ${dateStr}`, { size: 20, color: '636E72', spacing: 200 });
+
     jokes.forEach((joke, i) => {
       const jp = perfMap[joke.id] || [];
       const avgRating = jp.length > 0
         ? (jp.reduce((s, p) => s + p.rating, 0) / jp.length).toFixed(1)
         : null;
 
-      jokesHtml += `
-        <div style="margin-bottom:24pt; page-break-inside:avoid;">
-          <p style="font-size:14pt; font-weight:bold; margin-bottom:6pt; color:#2D3436;">
-            ${i + 1}. ${escHtml(joke.premise || joke.setup || 'Untitled')}
-          </p>
-          ${joke.category ? `<p style="font-size:9pt; color:#6C5CE7; margin-bottom:4pt;">${escHtml(joke.category)} &bull; ${escHtml(joke.status || 'draft')}</p>` : ''}
-          ${joke.premise ? `<p style="margin-bottom:4pt;"><b>Premise:</b> ${escHtml(joke.premise)}</p>` : ''}
-          ${joke.setup ? `<p style="margin-bottom:4pt;"><b>Setup:</b> ${escHtml(joke.setup)}</p>` : ''}
-          ${joke.punchline ? `<p style="margin-bottom:4pt;"><b>Punchline:</b> ${escHtml(joke.punchline)}</p>` : ''}
-          ${joke.tags?.length ? `<p style="font-size:9pt; color:#636E72;">Tags: ${escHtml(joke.tags.join(', '))}</p>` : ''}
-          ${avgRating ? `<p style="font-size:9pt; color:#636E72;">Avg rating: ${avgRating}/5 (${jp.length} performance${jp.length > 1 ? 's' : ''})</p>` : ''}
-          <hr style="border:none; border-top:1px solid #E8E0D8; margin-top:12pt;">
-        </div>
-      `;
+      const heading = `${i + 1}. ${joke.premise || joke.setup || 'Untitled'}`;
+      bodyXml += wxPara(heading, { bold: true, size: 28, color: '2D3436', spacing: 40 });
+
+      if (joke.category) {
+        bodyXml += wxPara(`${joke.category} \u2022 ${joke.status || 'draft'}`, { size: 18, color: '6C5CE7', spacing: 40 });
+      }
+
+      if (joke.premise) bodyXml += wxPara(`Premise: ${joke.premise}`, { spacing: 40 });
+      if (joke.setup) bodyXml += wxPara(`Setup: ${joke.setup}`, { spacing: 40 });
+      if (joke.punchline) bodyXml += wxPara(`Punchline: ${joke.punchline}`, { spacing: 40 });
+
+      if (joke.tags?.length) {
+        bodyXml += wxPara(`Tags: ${joke.tags.join(', ')}`, { size: 18, color: '636E72', spacing: 40 });
+      }
+      if (avgRating) {
+        bodyXml += wxPara(`Avg rating: ${avgRating}/5 (${jp.length} performance${jp.length > 1 ? 's' : ''})`, { size: 18, color: '636E72', spacing: 40 });
+      }
+
+      bodyXml += wxHr();
+      bodyXml += wxPara('', { spacing: 120 }); // spacer
     });
 
-    const html = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset="utf-8">
-        <title>${escHtml(title)}</title>
-        <style>
-          body { font-family: Calibri, sans-serif; font-size: 11pt; color: #2D3436; padding: 24pt; }
-          h1 { font-size: 20pt; color: #6C5CE7; margin-bottom: 6pt; }
-          .subtitle { font-size: 10pt; color: #636E72; margin-bottom: 24pt; }
-        </style>
-      </head>
-      <body>
-        <h1>${escHtml(title)}</h1>
-        <p class="subtitle">${jokes.length} jokes &bull; Exported ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-        ${jokesHtml}
-      </body>
-      </html>
-    `;
+    // Assemble the .docx (a ZIP with XML files)
+    const zip = new JSZip();
 
-    const blob = new Blob([html], { type: 'application/msword' });
-    const filename = title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.doc';
+    // [Content_Types].xml
+    zip.file('[Content_Types].xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '</Types>'
+    );
+
+    // _rels/.rels
+    zip.file('_rels/.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>'
+    );
+
+    // word/_rels/document.xml.rels
+    zip.file('word/_rels/document.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '</Relationships>'
+    );
+
+    // word/document.xml
+    zip.file('word/document.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:body>' +
+      bodyXml +
+      '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>' +
+      '</w:body>' +
+      '</w:document>'
+    );
+
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const filename = title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.docx';
     downloadBlob(blob, filename);
     UI.toast('Word file downloaded');
   },
