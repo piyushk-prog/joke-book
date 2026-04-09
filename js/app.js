@@ -8,6 +8,7 @@ import SetLists from './setlists.js';
 import Bits from './bits.js';
 import More from './more.js';
 import Timer from './timer.js';
+import Stats from './stats.js';
 
 const routes = {
   '/jokes': () => Jokes.renderList(),
@@ -27,6 +28,7 @@ const routes = {
   '/bitedit': (id) => Bits.renderEditor(id),
   '/more': () => More.renderPage(),
   '/timer': () => Timer.renderTimer(),
+  '/stats': () => Stats.renderPage(),
 };
 
 /** Combined Sets tab: set lists + bits */
@@ -117,7 +119,7 @@ function navigate() {
     '/captures': '/captures',
     '/sets': '/sets', '/setdetail': '/sets', '/setedit': '/sets',
     '/bitdetail': '/sets', '/bitedit': '/sets',
-    '/more': '/more', '/timer': '/more',
+    '/more': '/more', '/timer': '/more', '/stats': '/more',
   };
   const activeTab = tabMap[route] || '/jokes';
 

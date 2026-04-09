@@ -1,5 +1,5 @@
 /**
- * jokes.js — Joke CRUD, search, filtering, and view rendering
+ * jokes.js — Joke CRUD, search, filtering, sorting, favorites, copy
  */
 
 import DB from './db.js';
@@ -12,12 +12,23 @@ const CATEGORIES = [
   'Self-deprecating', 'Absurd', 'Storytelling', 'Crowd work', 'Other'
 ];
 
-// Current filter state (persists while app is open)
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+  { value: 'best', label: 'Best rated' },
+  { value: 'most-performed', label: 'Most performed' },
+];
+
+// Current filter/sort state (persists while app is open)
 let currentFilters = {
   query: '',
   status: 'all',
   category: 'all',
+  sort: 'newest',
 };
+
+// Cache perf stats to avoid re-fetching during sort
+let perfStatsCache = {};
 
 function matchesSearch(joke, query) {
   if (!query) return true;
@@ -39,19 +50,60 @@ function applyFilters(jokes) {
   });
 }
 
+function applySortAndPin(jokes) {
+  // Pinned jokes always first, then sort within each group
+  const pinned = jokes.filter(j => j.pinned);
+  const unpinned = jokes.filter(j => !j.pinned);
+
+  const sortFn = getSortFn(currentFilters.sort);
+  pinned.sort(sortFn);
+  unpinned.sort(sortFn);
+
+  return [...pinned, ...unpinned];
+}
+
+function getSortFn(sortKey) {
+  switch (sortKey) {
+    case 'oldest':
+      return (a, b) => new Date(a.updatedAt) - new Date(b.updatedAt);
+    case 'best':
+      return (a, b) => {
+        const sa = perfStatsCache[a.id]?.avg || 0;
+        const sb = perfStatsCache[b.id]?.avg || 0;
+        return sb - sa || new Date(b.updatedAt) - new Date(a.updatedAt);
+      };
+    case 'most-performed':
+      return (a, b) => {
+        const ca = perfStatsCache[a.id]?.count || 0;
+        const cb = perfStatsCache[b.id]?.count || 0;
+        return cb - ca || new Date(b.updatedAt) - new Date(a.updatedAt);
+      };
+    default: // newest
+      return (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt);
+  }
+}
+
 const Jokes = {
   /** Render the joke list view */
   async renderList() {
     const allJokes = await DB.getAll('jokes');
-    allJokes.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+    // Pre-fetch all perf stats for sorting
+    perfStatsCache = {};
+    await Promise.all(allJokes.map(async (joke) => {
+      perfStatsCache[joke.id] = await Performances.getStats(joke.id);
+    }));
 
     const filtered = applyFilters(allJokes);
+    const sorted = applySortAndPin(filtered);
     const app = document.getElementById('app-content');
 
-    // Collect unique categories from actual jokes for filter dropdown
     const usedCategories = [...new Set(allJokes.map(j => j.category).filter(Boolean))];
-
     const hasFilters = currentFilters.query || currentFilters.status !== 'all' || currentFilters.category !== 'all';
+
+    const sortOptions = SORT_OPTIONS.map(s =>
+      `<option value="${s.value}" ${currentFilters.sort === s.value ? 'selected' : ''}>${s.label}</option>`
+    ).join('');
 
     app.innerHTML = `
       <div class="view-header">
@@ -73,12 +125,17 @@ const Jokes = {
             <button class="filter-chip ${currentFilters.status === 'polished' ? 'active' : ''}" data-status="polished">Polished</button>
             <button class="filter-chip ${currentFilters.status === 'retired' ? 'active' : ''}" data-status="retired">Retired</button>
           </div>
-          ${usedCategories.length > 0 ? `
-            <select class="filter-select" id="category-filter">
-              <option value="all" ${currentFilters.category === 'all' ? 'selected' : ''}>All categories</option>
-              ${usedCategories.map(c => `<option value="${c}" ${currentFilters.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+          <div class="filter-dropdowns">
+            ${usedCategories.length > 0 ? `
+              <select class="filter-select" id="category-filter">
+                <option value="all" ${currentFilters.category === 'all' ? 'selected' : ''}>All categories</option>
+                ${usedCategories.map(c => `<option value="${c}" ${currentFilters.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+              </select>
+            ` : ''}
+            <select class="filter-select" id="sort-select">
+              ${sortOptions}
             </select>
-          ` : ''}
+          </div>
         </div>
       ` : ''}
 
@@ -86,51 +143,45 @@ const Jokes = {
         '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15.5 11a3.5 3.5 0 1 0-7 0"/><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>',
         'No jokes yet',
         'Tap + to write your first joke'
-      ) : filtered.length === 0 ? UI.emptyState(
+      ) : sorted.length === 0 ? UI.emptyState(
         '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
         'No matches',
         'Try a different search or filter'
       ) : `
-        <div class="joke-list" id="joke-list-container"></div>
-        ${hasFilters ? `<p class="filter-count">Showing ${filtered.length} of ${allJokes.length}</p>` : ''}
+        <div class="joke-list" id="joke-list-container">
+          ${sorted.map(joke => Jokes.renderCard(joke, perfStatsCache[joke.id])).join('')}
+        </div>
+        ${hasFilters ? `<p class="filter-count">Showing ${sorted.length} of ${allJokes.length}</p>` : ''}
       `}
     `;
 
-    // Render cards with async perf stats
-    const container = document.getElementById('joke-list-container');
-    if (container) {
-      const cards = await Promise.all(filtered.map(async (joke) => {
-        const stats = await Performances.getStats(joke.id);
-        return Jokes.renderCard(joke, stats);
-      }));
-      container.innerHTML = cards.join('');
-    }
-
-    // Bind search and filter events
     Jokes.bindListEvents();
   },
 
   /** Render a single joke card */
   renderCard(joke, stats) {
     return `
-      <div class="joke-card" data-id="${joke.id}" onclick="window.location.hash='#/editor/${joke.id}'">
+      <div class="joke-card" data-id="${joke.id}">
         <div class="joke-card-header">
+          <button class="btn-pin ${joke.pinned ? 'pinned' : ''}" data-pin-id="${joke.id}" aria-label="Pin" onclick="event.stopPropagation()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="${joke.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </button>
           ${UI.statusBadge(joke.status || 'draft')}
           ${UI.categoryBadge(joke.category)}
           ${Performances.renderStatsInline(stats)}
           <span class="joke-date">${UI.formatDate(joke.updatedAt)}</span>
         </div>
-        <div class="joke-card-body">
+        <div class="joke-card-body" onclick="window.location.hash='#/editor/${joke.id}'">
           ${joke.premise ? `<div class="joke-preview-line"><span class="label-mini">P</span> ${UI.esc(UI.truncate(joke.premise, 60))}</div>` : ''}
           ${joke.setup ? `<div class="joke-preview-line"><span class="label-mini">S</span> ${UI.esc(UI.truncate(joke.setup, 60))}</div>` : ''}
           ${joke.punchline ? `<div class="joke-preview-line"><span class="label-mini">PL</span> ${UI.esc(UI.truncate(joke.punchline, 60))}</div>` : ''}
         </div>
-        ${joke.tags && joke.tags.length > 0 ? `<div class="joke-card-tags">${UI.tagChips(joke.tags)}</div>` : ''}
+        ${joke.tags && joke.tags.length > 0 ? `<div class="joke-card-tags" onclick="window.location.hash='#/editor/${joke.id}'">${UI.tagChips(joke.tags)}</div>` : ''}
       </div>
     `;
   },
 
-  /** Bind events for search and filters */
+  /** Bind events for search, filters, sort, and pin */
   bindListEvents() {
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
@@ -142,7 +193,6 @@ const Jokes = {
           Jokes.renderList();
         }, 200);
       });
-      // Restore cursor position after re-render
       if (currentFilters.query) {
         searchInput.focus();
         searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
@@ -171,6 +221,27 @@ const Jokes = {
         Jokes.renderList();
       });
     }
+
+    const sortSelect = document.getElementById('sort-select');
+    if (sortSelect) {
+      sortSelect.addEventListener('change', (e) => {
+        currentFilters.sort = e.target.value;
+        Jokes.renderList();
+      });
+    }
+
+    // Pin toggle buttons
+    document.querySelectorAll('.btn-pin').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.pinId;
+        const joke = await DB.get('jokes', id);
+        if (joke) {
+          joke.pinned = !joke.pinned;
+          await DB.put('jokes', joke);
+          Jokes.renderList();
+        }
+      });
+    });
   },
 
   /** Render the joke editor view */
@@ -192,7 +263,6 @@ const Jokes = {
       `<option value="${c}" ${joke && joke.category === c ? 'selected' : ''}>${c}</option>`
     ).join('');
 
-    // prefill comes from converting a Quick Capture
     const premiseVal = prefill?.premise || (joke ? joke.premise : '');
     const setupVal = joke ? joke.setup : '';
     const punchlineVal = joke ? joke.punchline : '';
@@ -204,9 +274,17 @@ const Jokes = {
         </button>
         <h2>${isNew ? 'New Joke' : 'Edit Joke'}</h2>
         <div class="editor-actions">
-          ${!isNew ? `<button class="btn-icon btn-delete" id="btn-delete" aria-label="Delete">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/></svg>
-          </button>` : ''}
+          ${!isNew ? `
+            <button class="btn-icon" id="btn-copy" aria-label="Copy joke" title="Copy to clipboard">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            </button>
+            <button class="btn-icon ${joke.pinned ? 'pin-active' : ''}" id="btn-pin-editor" aria-label="Pin joke">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="${joke.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            </button>
+            <button class="btn-icon btn-delete" id="btn-delete" aria-label="Delete">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/></svg>
+            </button>
+          ` : ''}
         </div>
       </div>
 
@@ -257,23 +335,64 @@ const Jokes = {
       ${!isNew ? `<div id="perf-container"></div>` : ''}
     `;
 
-    // Bind events
+    // Bind form submit
     document.getElementById('joke-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       await Jokes.save(joke, prefill?.captureId);
     });
 
     if (!isNew) {
+      // Delete
       document.getElementById('btn-delete').addEventListener('click', async () => {
         await Jokes.deleteJoke(joke.id);
       });
 
-      // Render performance section
+      // Copy to clipboard
+      document.getElementById('btn-copy').addEventListener('click', async () => {
+        await Jokes.copyToClipboard(joke);
+      });
+
+      // Pin toggle in editor
+      document.getElementById('btn-pin-editor').addEventListener('click', async () => {
+        joke.pinned = !joke.pinned;
+        await DB.put('jokes', joke);
+        const btn = document.getElementById('btn-pin-editor');
+        btn.classList.toggle('pin-active', joke.pinned);
+        btn.querySelector('svg').setAttribute('fill', joke.pinned ? 'currentColor' : 'none');
+        UI.toast(joke.pinned ? 'Pinned' : 'Unpinned');
+      });
+
+      // Performance section
       const perfContainer = document.getElementById('perf-container');
       if (perfContainer) {
         perfContainer.innerHTML = await Performances.renderSection(joke.id);
         Performances.bindEvents(joke.id);
       }
+    }
+  },
+
+  /** Copy joke text to clipboard */
+  async copyToClipboard(joke) {
+    const parts = [];
+    if (joke.premise) parts.push(`Premise: ${joke.premise}`);
+    if (joke.setup) parts.push(`Setup: ${joke.setup}`);
+    if (joke.punchline) parts.push(`Punchline: ${joke.punchline}`);
+    const text = parts.join('\n\n');
+
+    try {
+      await navigator.clipboard.writeText(text);
+      UI.toast('Copied to clipboard');
+    } catch {
+      // Fallback for older browsers
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      UI.toast('Copied to clipboard');
     }
   },
 
@@ -301,6 +420,7 @@ const Jokes = {
       category,
       status,
       tags,
+      pinned: existing ? existing.pinned || false : false,
       bitId: existing ? existing.bitId || null : null,
       createdAt: existing ? existing.createdAt : now,
       updatedAt: now,
@@ -308,7 +428,6 @@ const Jokes = {
 
     await DB.put('jokes', joke);
 
-    // If this joke was created from a capture, mark the capture as converted
     if (captureId && !existing) {
       await Captures.markConverted(captureId, joke.id);
     }
@@ -328,6 +447,13 @@ const Jokes = {
     await DB.delete('jokes', id);
     UI.toast('Joke deleted');
     window.location.hash = '#/jokes';
+  },
+
+  /** Get a random joke */
+  async getRandomJoke() {
+    const jokes = await DB.getAll('jokes');
+    if (jokes.length === 0) return null;
+    return jokes[Math.floor(Math.random() * jokes.length)];
   }
 };
 

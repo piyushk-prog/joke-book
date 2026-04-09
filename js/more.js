@@ -43,6 +43,13 @@ const More = {
           </div>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
+        <div class="more-item" id="goto-stats">
+          <div class="more-item-left">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+            <span>Stats & Insights</span>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
       </div>
 
       <div class="more-section">
@@ -111,6 +118,11 @@ const More = {
     // Timer
     document.getElementById('goto-timer')?.addEventListener('click', () => {
       window.location.hash = '#/timer';
+    });
+
+    // Stats
+    document.getElementById('goto-stats')?.addEventListener('click', () => {
+      window.location.hash = '#/stats';
     });
 
     // Export

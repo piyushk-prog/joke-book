@@ -4,6 +4,7 @@
 
 import DB from './db.js';
 import UI from './ui.js';
+import Prompts from './prompts.js';
 
 const Captures = {
   /** Render the captures list view */
@@ -31,6 +32,22 @@ const Captures = {
           </button>
         </div>
       </form>
+
+      <div class="prompt-box">
+        <div class="prompt-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+          <span>Writing Prompt</span>
+          <button class="btn-sm btn-convert" id="btn-new-prompt">Shuffle</button>
+        </div>
+        <p class="prompt-text" id="prompt-text">${Prompts.getRandom()}</p>
+      </div>
+
+      <div class="random-joke-bar">
+        <button class="btn btn-secondary btn-full" id="btn-random-joke">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0022 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+          Show Random Joke
+        </button>
+      </div>
 
       ${active.length === 0 && converted.length === 0 ? UI.emptyState(
         '<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
@@ -105,8 +122,22 @@ const Captures = {
       Captures.renderList();
     });
 
-    // Convert to joke buttons
-    document.querySelectorAll('.btn-convert').forEach(btn => {
+    // Prompt shuffle
+    document.getElementById('btn-new-prompt')?.addEventListener('click', () => {
+      const el = document.getElementById('prompt-text');
+      if (el) el.textContent = Prompts.getRandom();
+    });
+
+    // Random joke
+    document.getElementById('btn-random-joke')?.addEventListener('click', async () => {
+      const { default: Jokes } = await import('./jokes.js');
+      const joke = await Jokes.getRandomJoke();
+      if (!joke) { UI.toast('No jokes saved yet'); return; }
+      window.location.hash = '#/editor/' + joke.id;
+    });
+
+    // Convert to joke buttons (skip the prompt shuffle button)
+    document.querySelectorAll('.btn-convert[data-id]').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = btn.dataset.id;
