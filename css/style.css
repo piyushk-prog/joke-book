@@ -799,6 +799,459 @@ details[open] .converted-header::before {
   padding: 24px 0;
 }
 
+/* --- Sets & Bits --- */
+.sets-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sets-section-header h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.btn-sm-header {
+  font-size: 0.78rem;
+  padding: 6px 14px;
+  border-radius: 20px;
+}
+
+.setlist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setlist-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: transform 0.15s;
+}
+
+.setlist-card:active {
+  transform: scale(0.98);
+}
+
+.setlist-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.setlist-card-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Set detail — joke list items */
+.set-meta-bar {
+  display: flex;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: var(--accent-bg);
+  border-radius: var(--radius-sm);
+}
+
+.set-jokes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.set-joke-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.set-joke-num {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 20px;
+  text-align: center;
+}
+
+.set-joke-content {
+  flex: 1;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.set-joke-premise {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.set-joke-controls {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.btn-icon-sm {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.btn-icon-sm:active {
+  background: var(--accent-bg);
+}
+
+.btn-icon-sm-spacer {
+  width: 24px;
+  height: 24px;
+}
+
+.btn-delete-sm {
+  color: var(--text-hint);
+}
+
+.btn-delete-sm:active {
+  color: var(--danger);
+}
+
+.set-notes {
+  margin-top: 16px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+/* --- Joke Picker Modal --- */
+.modal-tall {
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  max-width: 360px;
+}
+
+.picker-list {
+  flex: 1;
+  overflow-y: auto;
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.picker-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* --- Performance Section --- */
+.perf-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.perf-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.perf-section-header h3 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.perf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.perf-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.perf-rating-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.perf-details {
+  display: flex;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.perf-venue {
+  font-weight: 600;
+}
+
+.perf-notes {
+  width: 100%;
+  font-size: 0.8rem;
+  color: var(--text-hint);
+  padding-left: 2px;
+  margin-top: 2px;
+}
+
+.perf-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.perf-inline {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* Rating Picker */
+.rating-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rating-btn {
+  font-family: var(--font);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 2px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rating-btn.selected {
+  border-color: var(--rating-color);
+  background: var(--rating-color);
+  color: #fff;
+}
+
+/* --- More Page --- */
+.more-section {
+  margin-bottom: 20px;
+}
+
+.more-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-hint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.more-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-bottom: 6px;
+  transition: background 0.15s;
+}
+
+.more-item:active {
+  background: var(--accent-bg);
+}
+
+.more-item-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.more-item-left svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Toggle Switch */
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 24px;
+  transition: 0.3s;
+  cursor: pointer;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  bottom: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.toggle input:checked + .toggle-slider {
+  background: var(--accent);
+}
+
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stat-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  text-align: center;
+}
+
+.stat-num {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* --- Timer --- */
+.timer-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+}
+
+.timer-time {
+  font-size: 4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  letter-spacing: 2px;
+  margin-bottom: 32px;
+}
+
+.timer-controls {
+  display: flex;
+  gap: 12px;
+}
+
+.timer-btn {
+  min-width: 100px;
+}
+
+/* About */
+.more-about {
+  text-align: center;
+  padding: 24px 0 16px;
+  color: var(--text-hint);
+  font-size: 0.8rem;
+  line-height: 1.8;
+}
+
+/* --- date input styling --- */
+input[type="date"] {
+  font-family: var(--font);
+  font-size: 1rem;
+  padding: 12px 14px;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  width: 100%;
+}
+
+input[type="date"]:focus {
+  border-color: var(--accent);
+}
+
 /* --- Scrollbar (for desktop testing) --- */
 ::-webkit-scrollbar {
   width: 4px;

@@ -5,6 +5,7 @@
 import DB from './db.js';
 import UI from './ui.js';
 import Captures from './captures.js';
+import Performances from './performances.js';
 
 const CATEGORIES = [
   'One-liner', 'Observational', 'Wordplay', 'Dark', 'Topical',
@@ -90,24 +91,33 @@ const Jokes = {
         'No matches',
         'Try a different search or filter'
       ) : `
-        <div class="joke-list">
-          ${filtered.map(joke => Jokes.renderCard(joke)).join('')}
-        </div>
+        <div class="joke-list" id="joke-list-container"></div>
         ${hasFilters ? `<p class="filter-count">Showing ${filtered.length} of ${allJokes.length}</p>` : ''}
       `}
     `;
+
+    // Render cards with async perf stats
+    const container = document.getElementById('joke-list-container');
+    if (container) {
+      const cards = await Promise.all(filtered.map(async (joke) => {
+        const stats = await Performances.getStats(joke.id);
+        return Jokes.renderCard(joke, stats);
+      }));
+      container.innerHTML = cards.join('');
+    }
 
     // Bind search and filter events
     Jokes.bindListEvents();
   },
 
   /** Render a single joke card */
-  renderCard(joke) {
+  renderCard(joke, stats) {
     return `
       <div class="joke-card" data-id="${joke.id}" onclick="window.location.hash='#/editor/${joke.id}'">
         <div class="joke-card-header">
           ${UI.statusBadge(joke.status || 'draft')}
           ${UI.categoryBadge(joke.category)}
+          ${Performances.renderStatsInline(stats)}
           <span class="joke-date">${UI.formatDate(joke.updatedAt)}</span>
         </div>
         <div class="joke-card-body">
@@ -243,6 +253,8 @@ const Jokes = {
           ${isNew ? 'Save Joke' : 'Update Joke'}
         </button>
       </form>
+
+      ${!isNew ? `<div id="perf-container"></div>` : ''}
     `;
 
     // Bind events
@@ -255,6 +267,13 @@ const Jokes = {
       document.getElementById('btn-delete').addEventListener('click', async () => {
         await Jokes.deleteJoke(joke.id);
       });
+
+      // Render performance section
+      const perfContainer = document.getElementById('perf-container');
+      if (perfContainer) {
+        perfContainer.innerHTML = await Performances.renderSection(joke.id);
+        Performances.bindEvents(joke.id);
+      }
     }
   },
 
