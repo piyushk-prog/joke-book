@@ -4,6 +4,7 @@
 
 import DB from './db.js';
 import UI from './ui.js';
+import { normalizeJoke, firstSetup, firstPunchline } from './jokes.js';
 
 const Bits = {
   /** Render all bits */
@@ -112,7 +113,7 @@ const Bits = {
     const jokes = [];
     for (const jid of (bit.jokeIds || [])) {
       const j = await DB.get('jokes', jid);
-      if (j) jokes.push(j);
+      if (j) jokes.push(normalizeJoke(j));
     }
 
     const app = document.getElementById('app-content');
@@ -143,7 +144,7 @@ const Bits = {
             <div class="set-joke-item">
               <span class="set-joke-num">${i + 1}</span>
               <div class="set-joke-content" onclick="window.location.hash='#/editor/${joke.id}'">
-                <div class="set-joke-premise">${UI.esc(UI.truncate(joke.premise || joke.setup || joke.punchline, 50))}</div>
+                <div class="set-joke-premise">${UI.esc(UI.truncate(joke.premise || firstSetup(joke) || firstPunchline(joke), 50))}</div>
               </div>
               <div class="set-joke-controls">
                 ${i > 0 ? `<button class="btn-icon-sm" data-action="up" data-idx="${i}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg></button>` : '<span class="btn-icon-sm-spacer"></span>'}
@@ -186,7 +187,8 @@ const Bits = {
 
   /** Show joke picker for adding to a bit */
   async showJokePicker(bit) {
-    const allJokes = await DB.getAll('jokes');
+    const rawJokes = await DB.getAll('jokes');
+    const allJokes = rawJokes.map(normalizeJoke);
     const existing = new Set(bit.jokeIds || []);
     const available = allJokes.filter(j => !existing.has(j.id));
 
@@ -204,7 +206,7 @@ const Bits = {
           ${available.map(j => `
             <label class="picker-item">
               <input type="checkbox" value="${j.id}">
-              <span>${UI.esc(UI.truncate(j.premise || j.setup || j.punchline, 45))}</span>
+              <span>${UI.esc(UI.truncate(j.premise || firstSetup(j) || firstPunchline(j), 45))}</span>
             </label>
           `).join('')}
         </div>

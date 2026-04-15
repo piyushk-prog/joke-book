@@ -1,5 +1,13 @@
 /**
  * jokes.js — Joke CRUD, search, filtering, sorting, favorites, copy
+ *
+ * v7 schema:
+ *   joke.beats      — [{ setup, punchlines: [string, ...] }]   (at least one beat; first punchline is the main one, rest are "tags")
+ *   joke.categories — [string]                                  (filters applied to this joke; was joke.category, single string)
+ *   joke.labels     — [string]                                  (user's topic labels; was joke.tags)
+ *
+ * Legacy jokes (with joke.setup / joke.punchline / joke.category / joke.tags)
+ * are normalized on read via normalizeJoke() and re-saved in new shape on next edit.
  */
 
 import DB from './db.js';
@@ -28,29 +36,95 @@ const SORT_OPTIONS = [
 let currentFilters = {
   query: '',
   status: 'all',
-  category: 'all',
+  categories: [], // multi-select
   sort: 'newest',
 };
 
 // Cache perf stats to avoid re-fetching during sort
 let perfStatsCache = {};
 
+/* =========================================================================
+ * Schema normalization — keeps old jokes readable and uniforms the new shape
+ * ========================================================================= */
+
+/** Convert any joke (legacy or new) into the canonical v7 shape. Non-destructive: returns a new object. */
+function normalizeJoke(joke) {
+  if (!joke) return joke;
+  const n = { ...joke };
+
+  // beats[]
+  if (!Array.isArray(n.beats) || n.beats.length === 0) {
+    const punchline = typeof n.punchline === 'string' ? n.punchline : '';
+    n.beats = [{
+      setup: typeof n.setup === 'string' ? n.setup : '',
+      punchlines: punchline ? [punchline] : [''],
+    }];
+  } else {
+    // Defensive: ensure each beat has the expected shape
+    n.beats = n.beats.map(b => ({
+      setup: typeof b?.setup === 'string' ? b.setup : '',
+      punchlines: Array.isArray(b?.punchlines) && b.punchlines.length > 0
+        ? b.punchlines.map(p => (typeof p === 'string' ? p : ''))
+        : [''],
+    }));
+  }
+
+  // categories[]
+  if (!Array.isArray(n.categories)) {
+    n.categories = (typeof n.category === 'string' && n.category) ? [n.category] : [];
+  }
+
+  // labels[]
+  if (!Array.isArray(n.labels)) {
+    n.labels = Array.isArray(n.tags) ? [...n.tags] : [];
+  }
+
+  return n;
+}
+
+/** Get the first setup (for preview / sorting / export heading) */
+function firstSetup(joke) {
+  return joke?.beats?.[0]?.setup || '';
+}
+/** Get the first punchline (for preview) */
+function firstPunchline(joke) {
+  return joke?.beats?.[0]?.punchlines?.[0] || '';
+}
+/** Flatten all text in a joke for searching */
+function allJokeText(joke) {
+  const parts = [joke.premise || ''];
+  for (const b of (joke.beats || [])) {
+    parts.push(b.setup || '');
+    for (const p of (b.punchlines || [])) parts.push(p || '');
+  }
+  parts.push(...(joke.labels || []));
+  return parts.join(' ').toLowerCase();
+}
+/** Count extras beyond the first setup+punchline (for "+N more" badge) */
+function extrasCount(joke) {
+  const beats = joke.beats || [];
+  if (beats.length === 0) return 0;
+  // Extra beats after the first, plus extra punchlines in beat 1
+  const extraBeats = beats.length - 1;
+  const extraPunchlinesBeat1 = Math.max(0, (beats[0].punchlines?.length || 1) - 1);
+  return extraBeats + extraPunchlinesBeat1;
+}
+
+/* ========================================================================= */
+
 function matchesSearch(joke, query) {
   if (!query) return true;
-  const q = query.toLowerCase();
-  return (
-    (joke.premise || '').toLowerCase().includes(q) ||
-    (joke.setup || '').toLowerCase().includes(q) ||
-    (joke.punchline || '').toLowerCase().includes(q) ||
-    (joke.tags || []).some(t => t.toLowerCase().includes(q))
-  );
+  return allJokeText(joke).includes(query.toLowerCase());
 }
 
 function applyFilters(jokes) {
   return jokes.filter(joke => {
     if (!matchesSearch(joke, currentFilters.query)) return false;
     if (currentFilters.status !== 'all' && joke.status !== currentFilters.status) return false;
-    if (currentFilters.category !== 'all' && joke.category !== currentFilters.category) return false;
+    if (currentFilters.categories.length > 0) {
+      const jokeCats = joke.categories || [];
+      if (!currentFilters.categories.some(c => jokeCats.includes(c))) return false;
+    }
     return true;
   });
 }
@@ -88,10 +162,93 @@ function getSortFn(sortKey) {
   }
 }
 
+/* =========================================================================
+ * Filter chip bar (Option C, multi-select) — shared component for list view
+ * ========================================================================= */
+
+function renderFilterChipBarHTML() {
+  const selected = currentFilters.categories;
+  return `
+    <div class="chipbar-wrap" id="filter-chipbar">
+      <div class="chipbar-selected" id="filter-chipbar-selected">
+        ${selected.map(f => `
+          <span class="selected-chip">${UI.esc(f)}<button type="button" data-remove="${UI.esc(f)}" aria-label="Remove">×</button></span>
+        `).join('')}
+      </div>
+      <button type="button" class="add-filter-trigger" id="filter-chipbar-trigger">
+        ${selected.length === 0 ? '+ Filter by...' : '+ Add filter'}
+      </button>
+      <div class="search-pop" id="filter-chipbar-pop">
+        <input type="text" id="filter-chipbar-search" placeholder="Search filters...">
+        <div id="filter-chipbar-opts"></div>
+      </div>
+    </div>
+  `;
+}
+
+function bindFilterChipBar(onChange) {
+  const wrap = document.getElementById('filter-chipbar');
+  if (!wrap) return;
+  const trigger = document.getElementById('filter-chipbar-trigger');
+  const pop = document.getElementById('filter-chipbar-pop');
+  const search = document.getElementById('filter-chipbar-search');
+  const opts = document.getElementById('filter-chipbar-opts');
+  const selected = document.getElementById('filter-chipbar-selected');
+
+  function renderOpts() {
+    const q = search.value.toLowerCase();
+    const matches = CATEGORIES.filter(f => f.toLowerCase().includes(q));
+    opts.innerHTML = matches.length === 0
+      ? `<div class="search-pop-empty">No filters match</div>`
+      : matches.map(f => `
+          <div class="opt ${currentFilters.categories.includes(f) ? 'selected' : ''}" data-v="${UI.esc(f)}">
+            <span class="tick">✓</span>${UI.esc(f)}
+          </div>
+        `).join('');
+  }
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    pop.classList.toggle('open');
+    if (pop.classList.contains('open')) {
+      search.value = '';
+      renderOpts();
+      search.focus();
+    }
+  });
+  search.addEventListener('input', renderOpts);
+  opts.addEventListener('click', (e) => {
+    const opt = e.target.closest('.opt');
+    if (!opt) return;
+    const v = opt.dataset.v;
+    const idx = currentFilters.categories.indexOf(v);
+    if (idx >= 0) currentFilters.categories.splice(idx, 1);
+    else currentFilters.categories.push(v);
+    onChange();
+  });
+  selected.addEventListener('click', (e) => {
+    const v = e.target.dataset?.remove;
+    if (v) {
+      const idx = currentFilters.categories.indexOf(v);
+      if (idx >= 0) currentFilters.categories.splice(idx, 1);
+      onChange();
+    }
+  });
+  // Close popover on outside click
+  document.addEventListener('click', function onDocClick(e) {
+    if (!wrap.contains(e.target)) pop.classList.remove('open');
+  });
+}
+
+/* =========================================================================
+ * Main Jokes module
+ * ========================================================================= */
+
 const Jokes = {
   /** Render the joke list view */
   async renderList() {
-    const allJokes = await DB.getAll('jokes');
+    const rawJokes = await DB.getAll('jokes');
+    const allJokes = rawJokes.map(normalizeJoke);
 
     // Pre-fetch all perf stats for sorting
     perfStatsCache = {};
@@ -103,8 +260,9 @@ const Jokes = {
     const sorted = applySortAndPin(filtered);
     const app = document.getElementById('app-content');
 
-    const usedCategories = [...new Set(allJokes.map(j => j.category).filter(Boolean))];
-    const hasFilters = currentFilters.query || currentFilters.status !== 'all' || currentFilters.category !== 'all';
+    const hasFilters = currentFilters.query
+      || currentFilters.status !== 'all'
+      || currentFilters.categories.length > 0;
 
     const sortOptions = SORT_OPTIONS.map(s =>
       `<option value="${s.value}" ${currentFilters.sort === s.value ? 'selected' : ''}>${s.label}</option>`
@@ -131,16 +289,14 @@ const Jokes = {
             <button class="filter-chip ${currentFilters.status === 'retired' ? 'active' : ''}" data-status="retired">Retired</button>
           </div>
           <div class="filter-dropdowns">
-            ${usedCategories.length > 0 ? `
-              <select class="filter-select" id="category-filter">
-                <option value="all" ${currentFilters.category === 'all' ? 'selected' : ''}>All filters</option>
-                ${usedCategories.map(c => `<option value="${c}" ${currentFilters.category === c ? 'selected' : ''}>${c}</option>`).join('')}
-              </select>
-            ` : ''}
             <select class="filter-select" id="sort-select">
               ${sortOptions}
             </select>
           </div>
+        </div>
+
+        <div class="filter-row" style="margin-top:-4px">
+          ${renderFilterChipBarHTML()}
         </div>
       ` : ''}
 
@@ -165,6 +321,15 @@ const Jokes = {
 
   /** Render a single joke card */
   renderCard(joke, stats) {
+    const setup = firstSetup(joke);
+    const punchline = firstPunchline(joke);
+    const extras = extrasCount(joke);
+    const extrasBadge = extras > 0 ? `<span class="beat-more">+${extras} more</span>` : '';
+
+    const cats = joke.categories || [];
+    const catBadges = cats.slice(0, 2).map(c => UI.categoryBadge(c)).join('');
+    const catMore = cats.length > 2 ? `<span class="badge badge-category">+${cats.length - 2}</span>` : '';
+
     return `
       <div class="joke-card" data-id="${joke.id}">
         <div class="joke-card-header">
@@ -172,16 +337,16 @@ const Jokes = {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="${joke.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           </button>
           ${UI.statusBadge(joke.status || 'draft')}
-          ${UI.categoryBadge(joke.category)}
+          ${catBadges}${catMore}
           ${Performances.renderStatsInline(stats)}
           <span class="joke-date">${UI.formatDate(joke.updatedAt)}</span>
         </div>
         <div class="joke-card-body" onclick="window.location.hash='#/editor/${joke.id}'">
           ${joke.premise ? `<div class="joke-preview-line"><span class="label-mini">P</span> ${UI.esc(UI.truncate(joke.premise, 60))}</div>` : ''}
-          ${joke.setup ? `<div class="joke-preview-line"><span class="label-mini">S</span> ${UI.esc(UI.truncate(joke.setup, 60))}</div>` : ''}
-          ${joke.punchline ? `<div class="joke-preview-line"><span class="label-mini">PL</span> ${UI.esc(UI.truncate(joke.punchline, 60))}</div>` : ''}
+          ${setup ? `<div class="joke-preview-line"><span class="label-mini">S</span> ${UI.esc(UI.truncate(setup, 60))}</div>` : ''}
+          ${punchline ? `<div class="joke-preview-line"><span class="label-mini">PL</span> ${UI.esc(UI.truncate(punchline, 60))}${extrasBadge}</div>` : ''}
         </div>
-        ${joke.tags && joke.tags.length > 0 ? `<div class="joke-card-tags" onclick="window.location.hash='#/editor/${joke.id}'">${UI.tagChips(joke.tags)}</div>` : ''}
+        ${joke.labels && joke.labels.length > 0 ? `<div class="joke-card-tags" onclick="window.location.hash='#/editor/${joke.id}'">${UI.tagChips(joke.labels)}</div>` : ''}
       </div>
     `;
   },
@@ -219,13 +384,7 @@ const Jokes = {
       });
     });
 
-    const catFilter = document.getElementById('category-filter');
-    if (catFilter) {
-      catFilter.addEventListener('change', (e) => {
-        currentFilters.category = e.target.value;
-        Jokes.renderList();
-      });
-    }
+    bindFilterChipBar(() => Jokes.renderList());
 
     const sortSelect = document.getElementById('sort-select');
     if (sortSelect) {
@@ -251,30 +410,33 @@ const Jokes = {
 
   /** Render the joke editor view */
   async renderEditor(jokeId, prefill) {
-    let joke = null;
+    let raw = null;
     if (jokeId) {
-      joke = await DB.get('jokes', jokeId);
-      if (!joke) {
+      raw = await DB.get('jokes', jokeId);
+      if (!raw) {
         UI.toast('Joke not found');
         window.location.hash = '#/jokes';
         return;
       }
     }
+    const joke = raw ? normalizeJoke(raw) : null;
 
     const isNew = !joke;
     const app = document.getElementById('app-content');
-
-    const categoryOptions = CATEGORIES.map(c =>
-      `<option value="${c}" ${joke && joke.category === c ? 'selected' : ''}>${c}</option>`
-    ).join('');
 
     const methodOptions = METHODS.map(m =>
       `<option value="${m}" ${joke && joke.method === m ? 'selected' : ''}>${m}</option>`
     ).join('');
 
-    const premiseVal = prefill?.premise || (joke ? joke.premise : '');
-    const setupVal = joke ? joke.setup : '';
-    const punchlineVal = joke ? joke.punchline : '';
+    const premiseVal = prefill?.premise || (joke ? (joke.premise || '') : '');
+
+    // Beats to pre-populate in the editor
+    const beatsToRender = joke
+      ? joke.beats
+      : [{ setup: '', punchlines: [''] }];
+
+    // Categories chip state for the editor (local to this view)
+    let editorCats = joke ? [...(joke.categories || [])] : [];
 
     app.innerHTML = `
       <div class="editor-header">
@@ -307,28 +469,29 @@ const Jokes = {
         </div>
 
         <div class="form-group">
-          <label for="premise">Premise</label>
-          <textarea id="premise" placeholder="The observation or truth behind the joke..." rows="3">${UI.esc(premiseVal)}</textarea>
+          <label for="premise">Premise <span class="label-hint">— the observation behind the joke</span></label>
+          <textarea id="premise" class="premise-box" rows="1" placeholder="The truth behind the joke...">${UI.esc(premiseVal)}</textarea>
         </div>
 
-        <div class="form-group">
-          <label for="setup">Setup</label>
-          <textarea id="setup" placeholder="How you lead the audience in..." rows="3">${UI.esc(setupVal)}</textarea>
-        </div>
+        <div id="beats-container"></div>
+
+        <button type="button" class="btn-add-beat" id="btn-add-beat">
+          <span style="font-size: 1.2rem; line-height: 1;">+</span> Add beat
+        </button>
 
         <div class="form-group">
-          <label for="punchline">Punchline</label>
-          <textarea id="punchline" placeholder="The twist, the payoff..." rows="3">${UI.esc(punchlineVal)}</textarea>
+          <label>Filter <span class="label-hint">— pick one or more comedy techniques</span></label>
+          <div class="chipbar-wrap" id="editor-chipbar">
+            <div class="chipbar-selected" id="editor-chipbar-selected"></div>
+            <button type="button" class="add-filter-trigger" id="editor-chipbar-trigger">+ Add filter</button>
+            <div class="search-pop" id="editor-chipbar-pop">
+              <input type="text" id="editor-chipbar-search" placeholder="Search filters...">
+              <div id="editor-chipbar-opts"></div>
+            </div>
+          </div>
         </div>
 
         <div class="form-row">
-          <div class="form-group form-group-half">
-            <label for="category">Filter</label>
-            <select id="category">
-              <option value="">Choose...</option>
-              ${categoryOptions}
-            </select>
-          </div>
           <div class="form-group form-group-half">
             <label for="status">Status</label>
             <select id="status">
@@ -340,8 +503,8 @@ const Jokes = {
         </div>
 
         <div class="form-group">
-          <label for="tags">Tags <span class="label-hint">comma-separated</span></label>
-          <input type="text" id="tags" placeholder="e.g. relationships, work, food" value="${joke && joke.tags ? UI.esc(joke.tags.join(', ')) : ''}">
+          <label for="labels">Labels <span class="label-hint">comma-separated — e.g. relationships, work, food</span></label>
+          <input type="text" id="labels" placeholder="e.g. relationships, work, food" value="${joke && joke.labels ? UI.esc(joke.labels.join(', ')) : ''}">
         </div>
 
         <button type="submit" class="btn btn-primary btn-full">
@@ -352,34 +515,181 @@ const Jokes = {
       ${!isNew ? `<div id="perf-container"></div>` : ''}
     `;
 
-    // Bind form submit
+    // ---- Beats rendering & interactions ----
+    const beatsContainer = document.getElementById('beats-container');
+
+    function beatHTML(idx, beat, removable) {
+      const punchlines = beat.punchlines || [''];
+      const firstP = punchlines[0] || '';
+      const tagRows = punchlines.slice(1).map((p, i) => tagHTML(i + 1, p)).join('');
+      return `
+        <div class="beat" data-beat="${idx}">
+          <div class="beat-label">
+            <span>Beat ${idx}</span>
+            ${removable ? `<button type="button" class="beat-remove" aria-label="Remove beat">×</button>` : ''}
+          </div>
+          <div class="form-group">
+            <label>Setup</label>
+            <textarea class="beat-setup" rows="2" placeholder="How you lead the audience in...">${UI.esc(beat.setup || '')}</textarea>
+          </div>
+          <div class="form-group">
+            <label>Punchline</label>
+            <textarea class="beat-punchline" rows="2" placeholder="The twist, the payoff...">${UI.esc(firstP)}</textarea>
+          </div>
+          <div class="tags-list">${tagRows}</div>
+          <button type="button" class="btn-add-tag" aria-label="Add tag">
+            <span style="font-size: 1rem; line-height: 1;">+</span> Add tag
+          </button>
+        </div>
+      `;
+    }
+
+    function tagHTML(tagIdx, value = '') {
+      return `
+        <div class="tag-row form-group">
+          <label>Tag ${tagIdx} <span class="label-hint" style="font-size:0.7rem">— another punchline off the same setup</span></label>
+          <textarea class="beat-tag" rows="2" placeholder="Another punchline...">${UI.esc(value)}</textarea>
+          <button type="button" class="tag-remove" aria-label="Remove tag">×</button>
+        </div>
+      `;
+    }
+
+    function paintBeats() {
+      beatsContainer.innerHTML = beatsToRender
+        .map((b, i) => beatHTML(i + 1, b, i > 0))
+        .join('');
+    }
+
+    function renumberBeats() {
+      [...beatsContainer.querySelectorAll('.beat')].forEach((el, i) => {
+        el.dataset.beat = i + 1;
+        el.querySelector('.beat-label span').textContent = `Beat ${i + 1}`;
+        const removeBtn = el.querySelector('.beat-remove');
+        if (i === 0 && removeBtn) removeBtn.remove();
+        if (i > 0 && !removeBtn) {
+          el.querySelector('.beat-label').insertAdjacentHTML('beforeend',
+            `<button type="button" class="beat-remove" aria-label="Remove beat">×</button>`);
+        }
+      });
+    }
+
+    function renumberTagsIn(beatEl) {
+      [...beatEl.querySelectorAll('.tags-list .tag-row')].forEach((el, i) => {
+        el.querySelector('label').innerHTML = `Tag ${i + 1} <span class="label-hint" style="font-size:0.7rem">— another punchline off the same setup</span>`;
+      });
+    }
+
+    paintBeats();
+
+    document.getElementById('btn-add-beat').addEventListener('click', () => {
+      beatsContainer.insertAdjacentHTML('beforeend',
+        beatHTML(beatsContainer.querySelectorAll('.beat').length + 1, { setup: '', punchlines: [''] }, true));
+    });
+
+    beatsContainer.addEventListener('click', (e) => {
+      if (e.target.classList.contains('beat-remove')) {
+        e.target.closest('.beat').remove();
+        renumberBeats();
+        return;
+      }
+      if (e.target.closest('.btn-add-tag')) {
+        const beatEl = e.target.closest('.beat');
+        const tagsList = beatEl.querySelector('.tags-list');
+        const nextIdx = tagsList.querySelectorAll('.tag-row').length + 1;
+        tagsList.insertAdjacentHTML('beforeend', tagHTML(nextIdx));
+        return;
+      }
+      if (e.target.classList.contains('tag-remove')) {
+        const beatEl = e.target.closest('.beat');
+        e.target.closest('.tag-row').remove();
+        renumberTagsIn(beatEl);
+        return;
+      }
+    });
+
+    // ---- Editor filter chip bar ----
+    const ecWrap = document.getElementById('editor-chipbar');
+    const ecSelected = document.getElementById('editor-chipbar-selected');
+    const ecTrigger = document.getElementById('editor-chipbar-trigger');
+    const ecPop = document.getElementById('editor-chipbar-pop');
+    const ecSearch = document.getElementById('editor-chipbar-search');
+    const ecOpts = document.getElementById('editor-chipbar-opts');
+
+    function renderEcSelected() {
+      ecSelected.innerHTML = editorCats.map(f =>
+        `<span class="selected-chip">${UI.esc(f)}<button type="button" data-remove="${UI.esc(f)}" aria-label="Remove">×</button></span>`
+      ).join('');
+    }
+    function renderEcOpts() {
+      const q = ecSearch.value.toLowerCase();
+      const matches = CATEGORIES.filter(f => f.toLowerCase().includes(q));
+      ecOpts.innerHTML = matches.length === 0
+        ? `<div class="search-pop-empty">No filters match</div>`
+        : matches.map(f => `
+            <div class="opt ${editorCats.includes(f) ? 'selected' : ''}" data-v="${UI.esc(f)}">
+              <span class="tick">✓</span>${UI.esc(f)}
+            </div>
+          `).join('');
+    }
+    renderEcSelected();
+
+    ecTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      ecPop.classList.toggle('open');
+      if (ecPop.classList.contains('open')) {
+        ecSearch.value = '';
+        renderEcOpts();
+        ecSearch.focus();
+      }
+    });
+    ecSearch.addEventListener('input', renderEcOpts);
+    ecOpts.addEventListener('click', (e) => {
+      const opt = e.target.closest('.opt');
+      if (!opt) return;
+      const v = opt.dataset.v;
+      const idx = editorCats.indexOf(v);
+      if (idx >= 0) editorCats.splice(idx, 1);
+      else editorCats.push(v);
+      renderEcOpts();
+      renderEcSelected();
+    });
+    ecSelected.addEventListener('click', (e) => {
+      const v = e.target.dataset?.remove;
+      if (!v) return;
+      const idx = editorCats.indexOf(v);
+      if (idx >= 0) editorCats.splice(idx, 1);
+      renderEcSelected();
+      if (ecPop.classList.contains('open')) renderEcOpts();
+    });
+    document.addEventListener('click', function onDocClick(e) {
+      if (!ecWrap.contains(e.target)) ecPop.classList.remove('open');
+    });
+
+    // ---- Form submit ----
     document.getElementById('joke-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      await Jokes.save(joke, prefill?.captureId);
+      await Jokes.save(raw, prefill?.captureId, { editorCats });
     });
 
     if (!isNew) {
-      // Delete
       document.getElementById('btn-delete').addEventListener('click', async () => {
         await Jokes.deleteJoke(joke.id);
       });
-
-      // Copy to clipboard
       document.getElementById('btn-copy').addEventListener('click', async () => {
         await Jokes.copyToClipboard(joke);
       });
-
-      // Pin toggle in editor
       document.getElementById('btn-pin-editor').addEventListener('click', async () => {
-        joke.pinned = !joke.pinned;
-        await DB.put('jokes', joke);
+        // Mutate stored record directly
+        const stored = await DB.get('jokes', joke.id);
+        if (!stored) return;
+        stored.pinned = !stored.pinned;
+        await DB.put('jokes', stored);
         const btn = document.getElementById('btn-pin-editor');
-        btn.classList.toggle('pin-active', joke.pinned);
-        btn.querySelector('svg').setAttribute('fill', joke.pinned ? 'currentColor' : 'none');
-        UI.toast(joke.pinned ? 'Pinned' : 'Unpinned');
+        btn.classList.toggle('pin-active', stored.pinned);
+        btn.querySelector('svg').setAttribute('fill', stored.pinned ? 'currentColor' : 'none');
+        UI.toast(stored.pinned ? 'Pinned' : 'Unpinned');
       });
 
-      // Performance section
       const perfContainer = document.getElementById('perf-container');
       if (perfContainer) {
         perfContainer.innerHTML = await Performances.renderSection(joke.id);
@@ -390,17 +700,24 @@ const Jokes = {
 
   /** Copy joke text to clipboard */
   async copyToClipboard(joke) {
+    const n = normalizeJoke(joke);
     const parts = [];
-    if (joke.premise) parts.push(`Premise: ${joke.premise}`);
-    if (joke.setup) parts.push(`Setup: ${joke.setup}`);
-    if (joke.punchline) parts.push(`Punchline: ${joke.punchline}`);
+    if (n.premise) parts.push(`Premise: ${n.premise}`);
+    n.beats.forEach((b, i) => {
+      const label = n.beats.length > 1 ? ` (Beat ${i + 1})` : '';
+      if (b.setup) parts.push(`Setup${label}: ${b.setup}`);
+      (b.punchlines || []).forEach((p, pi) => {
+        if (!p) return;
+        const pLabel = pi === 0 ? 'Punchline' : `Tag ${pi}`;
+        parts.push(`${pLabel}${label}: ${p}`);
+      });
+    });
     const text = parts.join('\n\n');
 
     try {
       await navigator.clipboard.writeText(text);
       UI.toast('Copied to clipboard');
     } catch {
-      // Fallback for older browsers
       const ta = document.createElement('textarea');
       ta.value = text;
       ta.style.position = 'fixed';
@@ -414,17 +731,30 @@ const Jokes = {
   },
 
   /** Save a joke (create or update). captureId set when converting a capture. */
-  async save(existing, captureId) {
+  async save(existing, captureId, extras = {}) {
     const method = document.getElementById('method').value;
     const premise = document.getElementById('premise').value.trim();
-    const setup = document.getElementById('setup').value.trim();
-    const punchline = document.getElementById('punchline').value.trim();
-    const category = document.getElementById('category').value;
     const status = document.getElementById('status').value;
-    const tagsRaw = document.getElementById('tags').value;
-    const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+    const labelsRaw = document.getElementById('labels').value;
+    const labels = labelsRaw ? labelsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+    const categories = extras.editorCats ? [...extras.editorCats] : [];
 
-    if (!premise && !setup && !punchline) {
+    // Collect beats from the DOM
+    const beatEls = [...document.querySelectorAll('#beats-container .beat')];
+    const beats = beatEls.map(el => {
+      const setup = (el.querySelector('.beat-setup')?.value || '').trim();
+      const mainPunchline = (el.querySelector('.beat-punchline')?.value || '').trim();
+      const tagPunchlines = [...el.querySelectorAll('.beat-tag')]
+        .map(t => (t.value || '').trim())
+        .filter(Boolean);
+      const punchlines = [mainPunchline, ...tagPunchlines].filter((p, i) => i === 0 || p); // keep first slot even if empty
+      return { setup, punchlines: punchlines.length > 0 ? punchlines : [''] };
+    });
+
+    // Validation — require at least one non-empty field somewhere
+    const hasContent = premise
+      || beats.some(b => b.setup || b.punchlines.some(p => p));
+    if (!hasContent) {
       UI.toast('Write at least one field');
       return;
     }
@@ -434,11 +764,10 @@ const Jokes = {
       id: existing ? existing.id : DB.uid(),
       method,
       premise,
-      setup,
-      punchline,
-      category,
+      beats,
+      categories,
       status,
-      tags,
+      labels,
       pinned: existing ? existing.pinned || false : false,
       bitId: existing ? existing.bitId || null : null,
       createdAt: existing ? existing.createdAt : now,
@@ -477,4 +806,4 @@ const Jokes = {
 };
 
 export default Jokes;
-export { CATEGORIES, METHODS };
+export { CATEGORIES, METHODS, normalizeJoke, firstSetup, firstPunchline };

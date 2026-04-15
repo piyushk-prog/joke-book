@@ -1485,3 +1485,259 @@ input[type="date"]:focus {
   background: var(--border);
   border-radius: 4px;
 }
+
+/* ============================================
+   Beats, Tags, Multi-select Filter (v7)
+   ============================================ */
+
+/* Small premise textarea in editor */
+.premise-box {
+  padding: 8px 12px !important;
+  font-size: 0.92rem !important;
+  min-height: 38px;
+}
+
+/* Beat card — groups Setup + Punchline + Tags */
+.beat {
+  position: relative;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-light);
+  border-radius: var(--radius-sm);
+  padding: 14px 14px 12px;
+  margin-bottom: 12px;
+}
+.beat-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+.beat-label .beat-remove {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  line-height: 1;
+}
+.beat-label .beat-remove:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.beat .form-group:last-of-type { margin-bottom: 0; }
+.beat .form-group label {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+.beat textarea { background: var(--bg-card); }
+
+/* Tag row inside a beat (extra punchline off same setup) */
+.tag-row {
+  position: relative;
+  margin-top: 8px !important;
+  margin-bottom: 0 !important;
+}
+.tag-row .tag-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  line-height: 1;
+}
+.tag-row .tag-remove:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.btn-add-tag {
+  background: none;
+  border: 1px dashed var(--accent-light);
+  color: var(--accent);
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-family: var(--font);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-add-tag:hover {
+  background: var(--bg-card);
+  border-style: solid;
+}
+
+/* Add-beat button */
+.btn-add-beat {
+  width: 100%;
+  background: none;
+  border: 2px dashed var(--accent-light);
+  color: var(--accent);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+.btn-add-beat:hover {
+  background: var(--accent-bg);
+  border-style: solid;
+}
+
+/* Multi-select Filter chip bar (Option C) */
+.chipbar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  position: relative;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  min-height: 44px;
+}
+.chipbar-wrap:focus-within {
+  border-color: var(--accent-light);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.chipbar-selected {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.selected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border: 1px solid var(--accent-light);
+  border-radius: 20px;
+  padding: 4px 4px 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.selected-chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 6px;
+  border-radius: 999px;
+}
+.selected-chip button:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.add-filter-trigger {
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px dashed var(--accent-light);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.add-filter-trigger:hover { background: var(--accent-bg); }
+
+.search-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-width: 320px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 8px;
+  z-index: 10;
+  display: none;
+}
+.search-pop.open { display: block; }
+.search-pop input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+  font-family: var(--font);
+  background: var(--bg-input);
+  color: var(--text);
+}
+.search-pop .opt {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.search-pop .opt:hover { background: var(--accent-bg); }
+.search-pop .opt.selected {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+.search-pop .opt .tick {
+  width: 16px;
+  opacity: 0;
+  color: var(--accent);
+}
+.search-pop .opt.selected .tick { opacity: 1; }
+.search-pop-empty {
+  padding: 10px;
+  color: var(--text-hint);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+/* Inline list-view chip bar — compact variant */
+.filter-row .chipbar-wrap {
+  flex: 1;
+  min-width: 140px;
+  min-height: 36px;
+  padding: 4px 8px;
+}
+
+/* Beat indicator on joke card (shows when joke has >1 beat or tags) */
+.beat-more {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: 6px;
+}

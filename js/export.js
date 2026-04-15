@@ -5,6 +5,7 @@
 
 import DB from './db.js';
 import UI from './ui.js';
+import { normalizeJoke, firstSetup } from './jokes.js';
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -72,26 +73,36 @@ const Export = {
     bodyXml += wxPara(title, { bold: true, size: 40, color: '6C5CE7', spacing: 60 });
     bodyXml += wxPara(`${jokes.length} jokes \u2022 Exported ${dateStr}`, { size: 20, color: '636E72', spacing: 200 });
 
-    jokes.forEach((joke, i) => {
+    jokes.forEach((rawJoke, i) => {
+      const joke = normalizeJoke(rawJoke);
       const jp = perfMap[joke.id] || [];
       const avgRating = jp.length > 0
         ? (jp.reduce((s, p) => s + p.rating, 0) / jp.length).toFixed(1)
         : null;
 
-      const heading = `${i + 1}. ${joke.premise || joke.setup || 'Untitled'}`;
+      const heading = `${i + 1}. ${joke.premise || firstSetup(joke) || 'Untitled'}`;
       bodyXml += wxPara(heading, { bold: true, size: 28, color: '2D3436', spacing: 40 });
 
-      if (joke.category || joke.method) {
-        const meta = [joke.method, joke.category, joke.status || 'draft'].filter(Boolean).join(' \u2022 ');
-        bodyXml += wxPara(meta, { size: 18, color: '6C5CE7', spacing: 40 });
-      }
+      const metaParts = [];
+      if (joke.method) metaParts.push(joke.method);
+      if (joke.categories?.length) metaParts.push(joke.categories.join(' / '));
+      metaParts.push(joke.status || 'draft');
+      bodyXml += wxPara(metaParts.join(' \u2022 '), { size: 18, color: '6C5CE7', spacing: 40 });
 
       if (joke.premise) bodyXml += wxPara(`Premise: ${joke.premise}`, { spacing: 40 });
-      if (joke.setup) bodyXml += wxPara(`Setup: ${joke.setup}`, { spacing: 40 });
-      if (joke.punchline) bodyXml += wxPara(`Punchline: ${joke.punchline}`, { spacing: 40 });
 
-      if (joke.tags?.length) {
-        bodyXml += wxPara(`Tags: ${joke.tags.join(', ')}`, { size: 18, color: '636E72', spacing: 40 });
+      joke.beats.forEach((beat, bi) => {
+        const beatLabel = joke.beats.length > 1 ? ` (Beat ${bi + 1})` : '';
+        if (beat.setup) bodyXml += wxPara(`Setup${beatLabel}: ${beat.setup}`, { spacing: 40 });
+        (beat.punchlines || []).forEach((p, pi) => {
+          if (!p) return;
+          const pLabel = pi === 0 ? 'Punchline' : `Tag ${pi}`;
+          bodyXml += wxPara(`${pLabel}${beatLabel}: ${p}`, { spacing: 40 });
+        });
+      });
+
+      if (joke.labels?.length) {
+        bodyXml += wxPara(`Labels: ${joke.labels.join(', ')}`, { size: 18, color: '636E72', spacing: 40 });
       }
       if (avgRating) {
         bodyXml += wxPara(`Avg rating: ${avgRating}/5 (${jp.length} performance${jp.length > 1 ? 's' : ''})`, { size: 18, color: '636E72', spacing: 40 });

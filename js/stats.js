@@ -5,10 +5,12 @@
 import DB from './db.js';
 import UI from './ui.js';
 import { RATINGS } from './performances.js';
+import { normalizeJoke, firstSetup, firstPunchline } from './jokes.js';
 
 const Stats = {
   async renderPage() {
-    const jokes = await DB.getAll('jokes');
+    const rawJokes = await DB.getAll('jokes');
+    const jokes = rawJokes.map(normalizeJoke);
     const perfs = await DB.getAll('performances');
     const captures = await DB.getAll('captures');
     const sets = await DB.getAll('setlists');
@@ -31,13 +33,13 @@ const Stats = {
     const topJokes = [];
     for (const s of jokeStats.slice(0, 5)) {
       const j = await DB.get('jokes', s.id);
-      if (j) topJokes.push({ ...s, joke: j });
+      if (j) topJokes.push({ ...s, joke: normalizeJoke(j) });
     }
 
-    // --- Most used tags ---
+    // --- Most used labels (renamed from tags) ---
     const tagCounts = {};
     for (const j of jokes) {
-      for (const t of (j.tags || [])) {
+      for (const t of (j.labels || [])) {
         const key = t.toLowerCase();
         tagCounts[key] = (tagCounts[key] || 0) + 1;
       }
@@ -91,7 +93,7 @@ const Stats = {
               <div class="top-joke-item" onclick="window.location.hash='#/editor/${t.id}'">
                 <span class="top-joke-rank">#${i + 1}</span>
                 <div class="top-joke-info">
-                  <div class="top-joke-text">${UI.esc(UI.truncate(t.joke.premise || t.joke.setup || t.joke.punchline, 40))}</div>
+                  <div class="top-joke-text">${UI.esc(UI.truncate(t.joke.premise || firstSetup(t.joke) || firstPunchline(t.joke), 40))}</div>
                   <span class="top-joke-meta">${t.avg.toFixed(1)} avg &middot; ${t.count} show${t.count !== 1 ? 's' : ''}</span>
                 </div>
                 <span class="perf-rating-badge" style="background:${RATINGS[Math.round(t.avg) - 1]?.color || '#999'};font-size:0.65rem">${RATINGS[Math.round(t.avg) - 1]?.label || ''}</span>
@@ -137,7 +139,7 @@ const Stats = {
 
       ${topTags.length > 0 ? `
         <div class="stats-section">
-          <h3 class="more-section-title">Popular Tags</h3>
+          <h3 class="more-section-title">Popular Labels</h3>
           <div class="tag-cloud">
             ${topTags.map(([tag, count]) => `
               <span class="tag-cloud-item" style="font-size:${0.75 + (count / topTags[0][1]) * 0.5}rem">${UI.esc(tag)} <small>(${count})</small></span>

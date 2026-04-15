@@ -3,7 +3,7 @@
  * Bump CACHE_VERSION when you deploy updates
  */
 
-const CACHE_VERSION = 'jokebook-v6';
+const CACHE_VERSION = 'jokebook-v7';
 const ASSETS = [
   './',
   './index.html',
