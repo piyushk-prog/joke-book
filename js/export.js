@@ -81,8 +81,9 @@ const Export = {
       const heading = `${i + 1}. ${joke.premise || joke.setup || 'Untitled'}`;
       bodyXml += wxPara(heading, { bold: true, size: 28, color: '2D3436', spacing: 40 });
 
-      if (joke.category) {
-        bodyXml += wxPara(`${joke.category} \u2022 ${joke.status || 'draft'}`, { size: 18, color: '6C5CE7', spacing: 40 });
+      if (joke.category || joke.method) {
+        const meta = [joke.method, joke.category, joke.status || 'draft'].filter(Boolean).join(' \u2022 ');
+        bodyXml += wxPara(meta, { size: 18, color: '6C5CE7', spacing: 40 });
       }
 
       if (joke.premise) bodyXml += wxPara(`Premise: ${joke.premise}`, { spacing: 40 });

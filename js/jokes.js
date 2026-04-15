@@ -8,8 +8,13 @@ import Captures from './captures.js';
 import Performances from './performances.js';
 
 const CATEGORIES = [
-  'One-liner', 'Observational', 'Wordplay', 'Dark', 'Topical',
-  'Self-deprecating', 'Absurd', 'Storytelling', 'Crowd work', 'Other'
+  'Irony', 'Character', 'Shock', 'Hyperbole', 'Wordplay',
+  'Reference', 'Madcap', 'Parody', 'Analogy', 'Misplaced focus',
+  'Meta humor', 'One-liner', 'Other'
+];
+
+const METHODS = [
+  'Filtering', 'Finessing', 'Conjuring out of nothing'
 ];
 
 const SORT_OPTIONS = [
@@ -128,7 +133,7 @@ const Jokes = {
           <div class="filter-dropdowns">
             ${usedCategories.length > 0 ? `
               <select class="filter-select" id="category-filter">
-                <option value="all" ${currentFilters.category === 'all' ? 'selected' : ''}>All categories</option>
+                <option value="all" ${currentFilters.category === 'all' ? 'selected' : ''}>All filters</option>
                 ${usedCategories.map(c => `<option value="${c}" ${currentFilters.category === c ? 'selected' : ''}>${c}</option>`).join('')}
               </select>
             ` : ''}
@@ -263,6 +268,10 @@ const Jokes = {
       `<option value="${c}" ${joke && joke.category === c ? 'selected' : ''}>${c}</option>`
     ).join('');
 
+    const methodOptions = METHODS.map(m =>
+      `<option value="${m}" ${joke && joke.method === m ? 'selected' : ''}>${m}</option>`
+    ).join('');
+
     const premiseVal = prefill?.premise || (joke ? joke.premise : '');
     const setupVal = joke ? joke.setup : '';
     const punchlineVal = joke ? joke.punchline : '';
@@ -290,6 +299,14 @@ const Jokes = {
 
       <form id="joke-form" class="joke-form">
         <div class="form-group">
+          <label for="method">Method</label>
+          <select id="method">
+            <option value="">Choose...</option>
+            ${methodOptions}
+          </select>
+        </div>
+
+        <div class="form-group">
           <label for="premise">Premise</label>
           <textarea id="premise" placeholder="The observation or truth behind the joke..." rows="3">${UI.esc(premiseVal)}</textarea>
         </div>
@@ -306,7 +323,7 @@ const Jokes = {
 
         <div class="form-row">
           <div class="form-group form-group-half">
-            <label for="category">Category</label>
+            <label for="category">Filter</label>
             <select id="category">
               <option value="">Choose...</option>
               ${categoryOptions}
@@ -398,6 +415,7 @@ const Jokes = {
 
   /** Save a joke (create or update). captureId set when converting a capture. */
   async save(existing, captureId) {
+    const method = document.getElementById('method').value;
     const premise = document.getElementById('premise').value.trim();
     const setup = document.getElementById('setup').value.trim();
     const punchline = document.getElementById('punchline').value.trim();
@@ -414,6 +432,7 @@ const Jokes = {
     const now = new Date().toISOString();
     const joke = {
       id: existing ? existing.id : DB.uid(),
+      method,
       premise,
       setup,
       punchline,
@@ -458,4 +477,4 @@ const Jokes = {
 };
 
 export default Jokes;
-export { CATEGORIES };
+export { CATEGORIES, METHODS };
