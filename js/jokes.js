@@ -14,6 +14,7 @@ import DB from './db.js';
 import UI from './ui.js';
 import Captures from './captures.js';
 import Performances from './performances.js';
+import Hours from './hours.js';
 
 const CATEGORIES = [
   'Irony', 'Character', 'Shock', 'Hyperbole', 'Wordplay',
@@ -25,6 +26,48 @@ const METHODS = [
   'Filtering', 'Finessing', 'Conjuring out of nothing'
 ];
 
+// Set Assignment — which "tight" set(s) a joke belongs to. Multi-select.
+// "Retired" is handled separately via pipelineStage (lifecycle, not a set).
+const SET_ASSIGNMENTS = ['Tight 5', 'Tight 10', 'Tight 20', 'Experimental'];
+
+// Maps a set-assignment label to a CSS modifier for its badge color
+function setBadgeClass(name) {
+  switch (name) {
+    case 'Tight 5':      return 'badge-set-tight5';
+    case 'Tight 10':     return 'badge-set-tight10';
+    case 'Tight 20':     return 'badge-set-tight20';
+    case 'Experimental': return 'badge-set-exp';
+    default: return '';
+  }
+}
+
+// Pipeline Stage — lifecycle of a joke. Ordered progression.
+const PIPELINE_STAGES = [
+  { value: 'raw',       label: 'Raw idea'       },
+  { value: 'drafted',   label: 'Drafted'        },
+  { value: 'workshop',  label: 'Workshopped'    },
+  { value: 'rotation',  label: 'In Rotation'    },
+  { value: 'tight',     label: 'Tight Material' },
+  { value: 'retired',   label: 'Retired'        },
+];
+
+// Maps a pipeline stage value to a CSS modifier for its badge color
+function pipelineBadgeClass(stage) {
+  switch (stage) {
+    case 'raw':      return 'badge-raw';
+    case 'drafted':  return 'badge-drafted';
+    case 'workshop': return 'badge-workshop';
+    case 'rotation': return 'badge-rotation';
+    case 'tight':    return 'badge-tight';
+    case 'retired':  return 'badge-retired';
+    default: return 'badge-drafted';
+  }
+}
+
+function pipelineLabel(value) {
+  return PIPELINE_STAGES.find(s => s.value === value)?.label || 'Drafted';
+}
+
 const SORT_OPTIONS = [
   { value: 'newest', label: 'Newest' },
   { value: 'oldest', label: 'Oldest' },
@@ -35,13 +78,17 @@ const SORT_OPTIONS = [
 // Current filter/sort state (persists while app is open)
 let currentFilters = {
   query: '',
-  status: 'all',
-  categories: [], // multi-select
+  pipelineStage: 'all',   // lifecycle stage filter (was "status")
+  setAssignment: 'all',   // Tight 5/10/20/Experimental filter
+  categories: [],         // multi-select
   sort: 'newest',
 };
 
 // Cache perf stats to avoid re-fetching during sort
 let perfStatsCache = {};
+
+// Keeps the Personal Hours widget interval — cleared on each re-render
+let hoursStopper = null;
 
 /* =========================================================================
  * Schema normalization — keeps old jokes readable and uniforms the new shape
@@ -77,6 +124,20 @@ function normalizeJoke(joke) {
   // labels[]
   if (!Array.isArray(n.labels)) {
     n.labels = Array.isArray(n.tags) ? [...n.tags] : [];
+  }
+
+  // setAssignments[] — new field. Default empty for legacy jokes.
+  if (!Array.isArray(n.setAssignments)) n.setAssignments = [];
+
+  // pipelineStage — new field. Migrate legacy "status" if missing.
+  //   draft    → drafted
+  //   polished → rotation
+  //   retired  → retired
+  if (!n.pipelineStage) {
+    if (n.status === 'polished') n.pipelineStage = 'rotation';
+    else if (n.status === 'retired') n.pipelineStage = 'retired';
+    else if (n.status === 'draft') n.pipelineStage = 'drafted';
+    else n.pipelineStage = 'drafted';
   }
 
   return n;
@@ -120,7 +181,11 @@ function matchesSearch(joke, query) {
 function applyFilters(jokes) {
   return jokes.filter(joke => {
     if (!matchesSearch(joke, currentFilters.query)) return false;
-    if (currentFilters.status !== 'all' && joke.status !== currentFilters.status) return false;
+    if (currentFilters.pipelineStage !== 'all' && joke.pipelineStage !== currentFilters.pipelineStage) return false;
+    if (currentFilters.setAssignment !== 'all') {
+      const sets = joke.setAssignments || [];
+      if (!sets.includes(currentFilters.setAssignment)) return false;
+    }
     if (currentFilters.categories.length > 0) {
       const jokeCats = joke.categories || [];
       if (!currentFilters.categories.some(c => jokeCats.includes(c))) return false;
@@ -269,6 +334,8 @@ const Jokes = {
     ).join('');
 
     app.innerHTML = `
+      ${Hours.renderWidgetHTML()}
+
       <div class="view-header">
         <h1>My Jokes</h1>
         <span class="joke-count">${allJokes.length} joke${allJokes.length !== 1 ? 's' : ''}</span>
@@ -282,16 +349,25 @@ const Jokes = {
         </div>
 
         <div class="filter-row">
-          <div class="filter-chips" id="status-filters">
-            <button class="filter-chip ${currentFilters.status === 'all' ? 'active' : ''}" data-status="all">All</button>
-            <button class="filter-chip ${currentFilters.status === 'draft' ? 'active' : ''}" data-status="draft">Draft</button>
-            <button class="filter-chip ${currentFilters.status === 'polished' ? 'active' : ''}" data-status="polished">Polished</button>
-            <button class="filter-chip ${currentFilters.status === 'retired' ? 'active' : ''}" data-status="retired">Retired</button>
+          <div class="filter-chips filter-chips-scroll" id="pipeline-filters">
+            <button class="filter-chip ${currentFilters.pipelineStage === 'all' ? 'active' : ''}" data-stage="all">All</button>
+            ${PIPELINE_STAGES.map(s => `
+              <button class="filter-chip ${currentFilters.pipelineStage === s.value ? 'active' : ''}" data-stage="${s.value}">${s.label}</button>
+            `).join('')}
           </div>
           <div class="filter-dropdowns">
             <select class="filter-select" id="sort-select">
               ${sortOptions}
             </select>
+          </div>
+        </div>
+
+        <div class="filter-row">
+          <div class="filter-chips filter-chips-scroll" id="setassign-filters">
+            <button class="filter-chip ${currentFilters.setAssignment === 'all' ? 'active' : ''}" data-setassign="all">All sets</button>
+            ${SET_ASSIGNMENTS.map(s => `
+              <button class="filter-chip ${currentFilters.setAssignment === s ? 'active' : ''}" data-setassign="${UI.esc(s)}">${UI.esc(s)}</button>
+            `).join('')}
           </div>
         </div>
 
@@ -330,13 +406,23 @@ const Jokes = {
     const catBadges = cats.slice(0, 2).map(c => UI.categoryBadge(c)).join('');
     const catMore = cats.length > 2 ? `<span class="badge badge-category">+${cats.length - 2}</span>` : '';
 
+    // Set assignment badges (Tight 5 / 10 / 20 / Experimental)
+    const setBadges = (joke.setAssignments || [])
+      .map(s => `<span class="badge badge-set ${setBadgeClass(s)}">${UI.esc(s)}</span>`)
+      .join('');
+
+    // Pipeline stage badge
+    const stage = joke.pipelineStage || 'drafted';
+    const stageBadge = `<span class="badge ${pipelineBadgeClass(stage)}">${UI.esc(pipelineLabel(stage))}</span>`;
+
     return `
       <div class="joke-card" data-id="${joke.id}">
         <div class="joke-card-header">
           <button class="btn-pin ${joke.pinned ? 'pinned' : ''}" data-pin-id="${joke.id}" aria-label="Pin" onclick="event.stopPropagation()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="${joke.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           </button>
-          ${UI.statusBadge(joke.status || 'draft')}
+          ${stageBadge}
+          ${setBadges}
           ${catBadges}${catMore}
           ${Performances.renderStatsInline(stats)}
           <span class="joke-date">${UI.formatDate(joke.updatedAt)}</span>
@@ -353,6 +439,12 @@ const Jokes = {
 
   /** Bind events for search, filters, sort, and pin */
   bindListEvents() {
+    // Start the Personal Hours widget auto-update (clear any prior one first)
+    if (hoursStopper) { hoursStopper(); hoursStopper = null; }
+    if (document.getElementById('ph-widget')) {
+      hoursStopper = Hours.startAutoUpdate();
+    }
+
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
       let debounceTimer;
@@ -377,9 +469,16 @@ const Jokes = {
       });
     }
 
-    document.querySelectorAll('#status-filters .filter-chip').forEach(chip => {
+    document.querySelectorAll('#pipeline-filters .filter-chip').forEach(chip => {
       chip.addEventListener('click', () => {
-        currentFilters.status = chip.dataset.status;
+        currentFilters.pipelineStage = chip.dataset.stage;
+        Jokes.renderList();
+      });
+    });
+
+    document.querySelectorAll('#setassign-filters .filter-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        currentFilters.setAssignment = chip.dataset.setassign;
         Jokes.renderList();
       });
     });
@@ -438,6 +537,13 @@ const Jokes = {
     // Categories chip state for the editor (local to this view)
     let editorCats = joke ? [...(joke.categories || [])] : [];
 
+    // Set assignment chip state for the editor
+    let editorSets = joke ? [...(joke.setAssignments || [])] : [];
+
+    const pipelineOptions = PIPELINE_STAGES.map(s =>
+      `<option value="${s.value}" ${joke && joke.pipelineStage === s.value ? 'selected' : ''}>${s.label}</option>`
+    ).join('');
+
     app.innerHTML = `
       <div class="editor-header">
         <button class="btn-icon" onclick="window.location.hash='#/jokes'" aria-label="Back">
@@ -491,14 +597,19 @@ const Jokes = {
           </div>
         </div>
 
-        <div class="form-row">
-          <div class="form-group form-group-half">
-            <label for="status">Status</label>
-            <select id="status">
-              <option value="draft" ${joke && joke.status === 'draft' ? 'selected' : ''}>Draft</option>
-              <option value="polished" ${joke && joke.status === 'polished' ? 'selected' : ''}>Polished</option>
-              <option value="retired" ${joke && joke.status === 'retired' ? 'selected' : ''}>Retired</option>
-            </select>
+        <div class="form-group">
+          <label for="pipeline-stage">Pipeline Stage <span class="label-hint">— where this joke is in its lifecycle</span></label>
+          <select id="pipeline-stage">
+            ${pipelineOptions}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Set Assignment <span class="label-hint">— tag which tight sets this belongs to</span></label>
+          <div class="set-chips" id="editor-set-chips">
+            ${SET_ASSIGNMENTS.map(s => `
+              <button type="button" class="set-chip ${editorSets.includes(s) ? 'active' : ''}" data-set="${UI.esc(s)}">${UI.esc(s)}</button>
+            `).join('')}
           </div>
         </div>
 
@@ -665,10 +776,21 @@ const Jokes = {
       if (!ecWrap.contains(e.target)) ecPop.classList.remove('open');
     });
 
+    // ---- Set Assignment chip toggles ----
+    document.getElementById('editor-set-chips').addEventListener('click', (e) => {
+      const btn = e.target.closest('.set-chip');
+      if (!btn) return;
+      const val = btn.dataset.set;
+      const idx = editorSets.indexOf(val);
+      if (idx >= 0) editorSets.splice(idx, 1);
+      else editorSets.push(val);
+      btn.classList.toggle('active');
+    });
+
     // ---- Form submit ----
     document.getElementById('joke-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      await Jokes.save(raw, prefill?.captureId, { editorCats });
+      await Jokes.save(raw, prefill?.captureId, { editorCats, editorSets });
     });
 
     if (!isNew) {
@@ -734,10 +856,17 @@ const Jokes = {
   async save(existing, captureId, extras = {}) {
     const method = document.getElementById('method').value;
     const premise = document.getElementById('premise').value.trim();
-    const status = document.getElementById('status').value;
+    const pipelineStage = document.getElementById('pipeline-stage').value;
     const labelsRaw = document.getElementById('labels').value;
     const labels = labelsRaw ? labelsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
     const categories = extras.editorCats ? [...extras.editorCats] : [];
+    const setAssignments = extras.editorSets ? [...extras.editorSets] : [];
+
+    // Keep legacy status in sync for older code paths / exports
+    const legacyStatus =
+      pipelineStage === 'retired' ? 'retired' :
+      pipelineStage === 'rotation' || pipelineStage === 'tight' ? 'polished' :
+      'draft';
 
     // Collect beats from the DOM
     const beatEls = [...document.querySelectorAll('#beats-container .beat')];
@@ -766,7 +895,9 @@ const Jokes = {
       premise,
       beats,
       categories,
-      status,
+      setAssignments,
+      pipelineStage,
+      status: legacyStatus, // kept in sync for older code paths
       labels,
       pinned: existing ? existing.pinned || false : false,
       bitId: existing ? existing.bitId || null : null,

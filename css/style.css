@@ -1741,3 +1741,181 @@ input[type="date"]:focus {
   border-radius: 999px;
   margin-left: 6px;
 }
+
+/* ============================================
+   Personal Hours widget (Jokes page header)
+   ============================================ */
+
+.ph-widget {
+  background: linear-gradient(135deg, var(--accent-bg) 0%, var(--bg-card) 100%);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+  transition: border-color 0.3s ease, background 0.3s ease;
+}
+
+.ph-widget.ph-avoid {
+  border-left-color: var(--danger);
+  background: linear-gradient(135deg, var(--danger-bg) 0%, var(--bg-card) 100%);
+}
+
+.ph-widget.ph-master-card {
+  border-left-color: #FFB300;
+  background: linear-gradient(135deg, #FFF4D6 0%, var(--bg-card) 100%);
+}
+
+[data-theme="dark"] .ph-widget.ph-master-card {
+  background: linear-gradient(135deg, #3D3520 0%, var(--bg-card) 100%);
+}
+
+.ph-clock {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.ph-window {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-top: 2px;
+  letter-spacing: 0.2px;
+}
+
+.ph-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ph-action {
+  margin-top: 3px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.ph-master {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: #FFFFFF;
+  background: #FFB300;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.ph-prime {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: #FFFFFF;
+  background: var(--success);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.ph-avoid-tag {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  padding: 2px 7px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+/* ============================================
+   Set Assignments (Tight 5 / 10 / 20 / Experimental)
+   ============================================ */
+
+.badge-set {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-right: 4px;
+  background: var(--accent);
+  color: #FFFFFF;
+}
+
+.badge-set.badge-set-tight5  { background: #00B894; }
+.badge-set.badge-set-tight10 { background: #0984E3; }
+.badge-set.badge-set-tight20 { background: #6C5CE7; }
+.badge-set.badge-set-exp     { background: #FDCB6E; color: #2D3436; }
+
+/* Pipeline stage badges (extend existing .badge-draft/polished/retired) */
+.badge-raw        { background: #E8E0D8; color: #636E72; }
+.badge-drafted    { background: #FFE0B2; color: #6B4E00; }
+.badge-workshop   { background: #B3E5FC; color: #01579B; }
+.badge-rotation   { background: #C8E6C9; color: #1B5E20; }
+.badge-tight      { background: #6C5CE7; color: #FFFFFF; }
+
+[data-theme="dark"] .badge-raw      { background: #3A3A5C; color: #A0A0B8; }
+[data-theme="dark"] .badge-drafted  { background: #5C4520; color: #FFD180; }
+[data-theme="dark"] .badge-workshop { background: #1A3A5C; color: #81D4FA; }
+[data-theme="dark"] .badge-rotation { background: #1B4A2E; color: #A5D6A7; }
+[data-theme="dark"] .badge-tight    { background: #8A7DF5; color: #FFFFFF; }
+
+/* Set-assignment toggle chips in joke editor */
+.set-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.set-chip {
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.set-chip:hover {
+  border-color: var(--accent-light);
+}
+
+.set-chip.active {
+  background: var(--accent);
+  color: #FFFFFF;
+  border-color: var(--accent);
+}
+
+/* Horizontally scrolling filter chips (for pipeline stages + set assignments) */
+.filter-chips-scroll {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.filter-chips-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-chips-scroll .filter-chip {
+  white-space: nowrap;
+  flex-shrink: 0;
+}

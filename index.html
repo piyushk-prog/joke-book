@@ -69,10 +69,35 @@
   <!-- App entry point -->
   <script type="module" src="js/app.js"></script>
 
-  <!-- Register service worker -->
+  <!-- Register service worker with auto-update -->
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      // Prevent the reload loop: only reload once when a new SW activates
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        // Check for a new sw.js immediately on load
+        reg.update().catch(() => {});
+
+        // Also check every 30 minutes while the app is open
+        setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+
+        // And check again whenever the tab regains focus
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            reg.update().catch(() => {});
+          }
+        });
+
+        // When a new SW finishes installing and an old one is still
+        // controlling, skipWaiting() in sw.js makes it take over,
+        // and our controllerchange listener above reloads the page.
+      }).catch(() => {});
     }
   </script>
 </body>
